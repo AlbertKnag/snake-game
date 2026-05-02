@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐍 道具贪吃蛇</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Segoe UI', sans-serif;
+    padding: 16px;
+  }
+  .game-wrapper {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(12px);
+    border-radius: 24px;
+    padding: 24px;
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    color: #fff;
+  }
+  .score-box {
+    font-size: 20px;
+    font-weight: bold;
+    background: rgba(255,255,255,0.1);
+    padding: 8px 20px;
+    border-radius: 12px;
+    display: flex;
+    gap: 24px;
+  }
+  .score-box span { color: #ffd700; }
+  .score-box .high-score { color: #ff6b6b; }
+  .title { font-size: 22px; font-weight: bold; letter-spacing: 2px; }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    border-radius: 12px;
+    background: #1a1a2e;
+    border: 2px solid rgba(255,255,255,0.08);
+    width: 500px;
+    height: 500px;
+  }
+
+
+  .powerup-bar {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin: 10px 0 12px;
+    min-height: 32px;
+    flex-wrap: wrap;
+  }
+  .powerup-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: bold;
+    animation: pulse-badge 1s infinite;
+    color: #fff;
+  }
+  @keyframes pulse-badge {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.85; }
+  }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .controls button {
+    padding: 10px 28px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+  }
+  .controls button:hover { background: rgba(255,255,255,0.2); transform: translateY(-1px); }
+  .controls button:active { transform: scale(0.97); }
+  .controls .primary { background: #6c5ce7; border-color: #6c5ce7; }
+  .controls .primary:hover { background: #7c6cf7; }
+
+  @media (max-width: 560px) {
+    .game-wrapper { padding: 12px; border-radius: 16px; }
+    canvas { width: 100%; height: auto; aspect-ratio: 1/1; }
+    .score-box { font-size: 15px; padding: 6px 14px; gap: 14px; }
+    .title { font-size: 18px; }
+    .controls button { padding: 8px 20px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="game-wrapper">
+  <div class="header">
+    <div class="title">🐍 道具贪吃蛇</div>
+    <div class="score-box">
+      <div>得分 <span id="score">0</span></div>
+      <div class="high-score">最高 <span id="highScore">0</span></div>
+    </div>
+  </div>
+
+  <div class="powerup-bar" id="powerupBar"></div>
+
+  <canvas id="gameCanvas" width="500" height="500"></canvas>
+
+  <div class="controls">
+    <button class="primary" id="startBtn">▶ 开始游戏</button>
+    <button id="pauseBtn">⏸ 暂停</button>
+  </div>
+
+</div>
+
+<script>
+// ===== 游戏配置 =====
+const GRID_SIZE = 20;
+const CELL_SIZE = 25; // 500/20
+const TICK_BASE = 150; // ms
+const POWERUP_TYPES = [
+  { id: 'speed',    emoji: '⚡', color: '#ffd700', label: '加速', duration: 5000, weight: 15 },
+  { id: 'shield',   emoji: '🛡️', color: '#4ecdc4', label: '护盾', duration: 6000, weight: 12 },
+  { id: 'shrink',   emoji: '✂️', color: '#ff6b6b', label: '缩身', duration: 0, weight: 12 },
+  { id: 'multiply', emoji: '🎯', color: '#ff9ff3', label: '双倍', duration: 7000, weight: 10 },
+  { id: 'slow',     emoji: '🐌', color: '#a29bfe', label: '减速', duration: 5000, weight: 12 },
+  { id: 'bonus',    emoji: '💎', color: '#fdcb6e', label: '宝石', duration: 0, weight: 15 },
+  { id: 'ghost',    emoji: '👻', color: '#dfe6e9', label: '穿墙', duration: 6000, weight: 10 },
+  { id: 'magnet',   emoji: '🧲', color: '#e17055', label: '磁铁', duration: 5000, weight: 8 },
+  { id: 'toxic',    emoji: '☠️', color: '#6c5ce7', label: '毒药', duration: 0, weight: 6 },
+];
+
+// ===== Canvas =====
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const highScoreEl = document.getElementById('highScore');
+const powerupBarEl = document.getElementById('powerupBar');
+
+// ===== 游戏状态 =====
+let snake = [];
+let direction = { x: 1, y: 0 };
+let nextDirection = { x: 1, y: 0 };
+let food = { x: 8, y: 10 };
+let powerups = [];
+let score = 0;
+let highScore = parseInt(localStorage.getItem('snakeHighScore')) || 0;
+let gameOver = false;
+let paused = false;
+let started = false;
+let gameLoop = null;
+let activeEffects = {};
+let tickInterval = TICK_BASE;
+let particles = [];
+
+highScoreEl.textContent = highScore;
+
+// ===== 道具系统 =====
+function weightedRandomPowerup() {
+  const total = POWERUP_TYPES.reduce((s, p) => s + p.weight, 0);
+  let r = Math.random() * total;
+  for (const p of POWERUP_TYPES) {
+    r -= p.weight;
+    if (r <= 0) return { ...p };
+  }
+  return { ...POWERUP_TYPES[0] };
+}
+
+function spawnPowerup() {
+  let pos;
+  do {
+    pos = {
+      x: Math.floor(Math.random() * GRID_SIZE),
+      y: Math.floor(Math.random() * GRID_SIZE)
+    };
+  } while (
+    snake.some(s => s.x === pos.x && s.y === pos.y) ||
+    (food.x === pos.x && food.y === pos.y) ||
+    powerups.some(p => p.x === pos.x && p.y === pos.y)
+  );
+  const type = weightedRandomPowerup();
+  powerups.push({ ...type, x: pos.x, y: pos.y });
+}
+
+function applyEffect(typeId) {
+  const type = POWERUP_TYPES.find(p => p.id === typeId);
+  if (!type) return;
+
+  switch (typeId) {
+    case 'speed':
+      activeEffects.speed = { remaining: type.duration, endTime: Date.now() + type.duration };
+      tickInterval = 80;
+      break;
+    case 'slow':
+      activeEffects.slow = { remaining: type.duration, endTime: Date.now() + type.duration };
+      tickInterval = 250;
+      break;
+    case 'shield':
+      activeEffects.shield = { remaining: type.duration, endTime: Date.now() + type.duration };
+      break;
+    case 'multiply':
+      activeEffects.multiply = { remaining: type.duration, endTime: Date.now() + type.duration };
+      break;
+    case 'ghost':
+      activeEffects.ghost = { remaining: type.duration, endTime: Date.now() + type.duration };
+      break;
+    case 'magnet':
+      activeEffects.magnet = { remaining: type.duration, endTime: Date.now() + type.duration };
+      break;
+    case 'shrink':
+      // 直接缩短蛇
+      if (snake.length > 3) {
+        const removeCount = Math.min(3, snake.length - 3);
+        snake.splice(snake.length - removeCount, removeCount);
+      }
+      break;
+    case 'bonus':
+      score += 50;
+      scoreEl.textContent = score;
+      spawnParticles(food.x * CELL_SIZE + CELL_SIZE/2, food.y * CELL_SIZE + CELL_SIZE/2, '#ffd700', 15);
+      break;
+    case 'toxic':
+      // 毒药 - 扣分
+      score = Math.max(0, score - 30);
+      scoreEl.textContent = score;
+      spawnParticles(food.x * CELL_SIZE + CELL_SIZE/2, food.y * CELL_SIZE + CELL_SIZE/2, '#6c5ce7', 12);
+      break;
+  }
+  updatePowerupBar();
+  validDirections.clear();
+}
+
+function updateActiveEffects() {
+  const now = Date.now();
+  let changed = false;
+  ['speed', 'slow', 'shield', 'multiply', 'ghost', 'magnet'].forEach(id => {
+    if (activeEffects[id] && now >= activeEffects[id].endTime) {
+      delete activeEffects[id];
+      changed = true;
+    }
+  });
+  // Reset speed if neither active
+  if (!activeEffects.speed && !activeEffects.slow) {
+    tickInterval = TICK_BASE;
+  } else if (!activeEffects.speed) {
+    tickInterval = activeEffects.slow ? 250 : TICK_BASE;
+  } else {
+    tickInterval = activeEffects.speed ? 80 : TICK_BASE;
+  }
+  if (changed) updatePowerupBar();
+}
+
+function updatePowerupBar() {
+  const now = Date.now();
+  const active = Object.entries(activeEffects).filter(([id, e]) => now < e.endTime);
+  if (active.length === 0) {
+    powerupBarEl.innerHTML = '';
+    return;
+  }
+  powerupBarEl.innerHTML = active.map(([id, e]) => {
+    const type = POWERUP_TYPES.find(p => p.id === id);
+    if (!type) return '';
+    const remaining = Math.ceil((e.endTime - now) / 1000);
+    return `<span class="powerup-badge" style="background:${type.color}40; border:1px solid ${type.color}">
+      ${type.emoji} ${type.label} ${remaining}s
+    </span>`;
+  }).join('');
+}
+
+// ===== 粒子效果 =====
+function spawnParticles(x, y, color, count = 8) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.015 + Math.random() * 0.02,
+      size: 2 + Math.random() * 4,
+      color
+    });
+  }
+}
+
+function updateParticles() {
+  particles = particles.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.97;
+    p.vy *= 0.97;
+    p.life -= p.decay;
+    return p.life > 0;
+  });
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ===== 蛇与食物 =====
+function initGame() {
+  snake = [
+    { x: 10, y: 10 },
+    { x: 9, y: 10 },
+    { x: 8, y: 10 }
+  ];
+  direction = { x: 1, y: 0 };
+  nextDirection = { x: 1, y: 0 };
+  score = 0;
+  gameOver = false;
+  paused = false;
+  activeEffects = {};
+  powerups = [];
+  particles = [];
+  tickInterval = TICK_BASE;
+  scoreEl.textContent = '0';
+  powerupBarEl.innerHTML = '';
+  spawnFood();
+  // 开局送两个道具
+  setTimeout(() => { if (!gameOver) spawnPowerup(); }, 800);
+  setTimeout(() => { if (!gameOver) spawnPowerup(); }, 1600);
+}
+
+function spawnFood() {
+  let pos;
+  do {
+    pos = {
+      x: Math.floor(Math.random() * GRID_SIZE),
+      y: Math.floor(Math.random() * GRID_SIZE)
+    };
+  } while (
+    snake.some(s => s.x === pos.x && s.y === pos.y) ||
+    powerups.some(p => p.x === pos.x && p.y === pos.y)
+  );
+  food = pos;
+}
+
+// ===== 碰撞检测 =====
+function checkCollision(head) {
+  // 墙碰撞
+  if (!activeEffects.ghost) {
+    if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
+      return true;
+    }
+  } else {
+    // 穿墙模式 - 循环到对面
+    if (head.x < 0) head.x = GRID_SIZE - 1;
+    if (head.x >= GRID_SIZE) head.x = 0;
+    if (head.y < 0) head.y = GRID_SIZE - 1;
+    if (head.y >= GRID_SIZE) head.y = 0;
+  }
+
+  // 自身碰撞
+  if (!activeEffects.shield) {
+    for (let i = 1; i < snake.length; i++) {
+      if (snake[i] && snake[i].x === head.x && snake[i].y === head.y) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// ===== 方向输入防冲突 =====
+const validDirections = new Set();
+
+// ===== 游戏主逻辑 =====
+function tick() {
+  if (paused || gameOver) return;
+
+  updateActiveEffects();
+
+  // 应用方向
+  direction = { ...nextDirection };
+
+  // 新头部
+  const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+
+  // 穿墙处理
+  const ghostActive = !!activeEffects.ghost;
+
+  // 碰撞检测
+  let collided = checkCollision(head);
+  if (collided) {
+    endGame();
+    return;
+  }
+
+  snake.unshift({ ...head });
+
+  // 吃食物
+  let ate = false;
+  if (head.x === food.x && head.y === food.y) {
+    const multiplier = activeEffects.multiply ? 2 : 1;
+    score += 10 * multiplier;
+    scoreEl.textContent = score;
+    if (score > highScore) {
+      highScore = score;
+      localStorage.setItem('snakeHighScore', highScore);
+      highScoreEl.textContent = highScore;
+    }
+    ate = true;
+    spawnParticles(food.x * CELL_SIZE + CELL_SIZE/2, food.y * CELL_SIZE + CELL_SIZE/2, '#ffd700', 10);
+    spawnFood();
+    // 随机生道具
+    if (Math.random() < 0.4) spawnPowerup();
+  }
+
+  // 吃道具
+  const powerupIdx = powerups.findIndex(p => p.x === head.x && p.y === head.y);
+  if (powerupIdx !== -1) {
+    const p = powerups[powerupIdx];
+    applyEffect(p.id);
+    spawnParticles(p.x * CELL_SIZE + CELL_SIZE/2, p.y * CELL_SIZE + CELL_SIZE/2, p.color, 12);
+    powerups.splice(powerupIdx, 1);
+    // 补充道具
+    setTimeout(() => { if (!gameOver && powerups.length < 3) spawnPowerup(); }, 2000);
+  }
+
+  if (!ate) {
+    snake.pop();
+  }
+
+  // 磁铁效果 - 吸引附近食物
+  if (activeEffects.magnet) {
+    const dx = food.x - head.x;
+    const dy = food.y - head.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist <= 4 && dist > 0.5) {
+      food.x += dx > 0 ? 1 : -1;
+      food.y += dy > 0 ? 1 : -1;
+    }
+  }
+
+  validDirections.clear();
+  updateParticles();
+  draw();
+}
+
+function endGame() {
+  gameOver = true;
+  // game over - wait for tap to restart
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('snakeHighScore', highScore);
+    highScoreEl.textContent = highScore;
+  }
+  draw();
+  spawnParticles(snake[0].x * CELL_SIZE + CELL_SIZE/2, snake[0].y * CELL_SIZE + CELL_SIZE/2, '#ff6b6b', 20);
+  draw();
+}
+
+// ===== 渲染 =====
+function draw() {
+  ctx.clearRect(0, 0, 500, 500);
+
+  // 网格
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= GRID_SIZE; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * CELL_SIZE, 0);
+    ctx.lineTo(i * CELL_SIZE, 500);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i * CELL_SIZE);
+    ctx.lineTo(500, i * CELL_SIZE);
+    ctx.stroke();
+  }
+
+  // 食物
+  const fx = food.x * CELL_SIZE + CELL_SIZE/2;
+  const fy = food.y * CELL_SIZE + CELL_SIZE/2;
+  const pulse = Math.sin(Date.now() / 200) * 0.15 + 0.85;
+
+  ctx.save();
+  ctx.shadowColor = '#ffd700';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#ff4757';
+  ctx.beginPath();
+  ctx.arc(fx, fy, (CELL_SIZE/2 - 2) * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ff6b81';
+  ctx.beginPath();
+  ctx.arc(fx - 2, fy - 2, (CELL_SIZE/2 - 5) * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // 道具
+  powerups.forEach(p => {
+    const px = p.x * CELL_SIZE + CELL_SIZE/2;
+    const py = p.y * CELL_SIZE + CELL_SIZE/2;
+    const float = Math.sin(Date.now() / 300 + p.x) * 2;
+    ctx.save();
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 15;
+    ctx.font = '18px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.emoji, px, py + float);
+    ctx.restore();
+  });
+
+  // 蛇
+  snake.forEach((seg, i) => {
+    const x = seg.x * CELL_SIZE;
+    const y = seg.y * CELL_SIZE;
+    const isHead = i === 0;
+
+    // 护盾光环
+    if (isHead && activeEffects.shield) {
+      ctx.save();
+      ctx.shadowColor = '#4ecdc4';
+      ctx.shadowBlur = 20;
+      ctx.strokeStyle = 'rgba(78, 205, 196, 0.5)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x + CELL_SIZE/2, y + CELL_SIZE/2, CELL_SIZE/2 + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 穿墙闪烁
+    if (isHead && activeEffects.ghost) {
+      ctx.globalAlpha = 0.6 + Math.sin(Date.now() / 100) * 0.3;
+    }
+
+    const ratio = 1 - (i / snake.length) * 0.5;
+    const r = Math.round(46 * ratio);
+    const g = Math.round(204 * ratio);
+    const b = Math.round(113 * ratio);
+
+    ctx.fillStyle = isHead ? `rgb(46, 230, 113)` : `rgb(${r}, ${g}, ${b})`;
+    ctx.shadowColor = isHead ? '#2ee671' : 'transparent';
+    ctx.shadowBlur = isHead && !activeEffects.ghost ? 8 : 0;
+
+    const pad = 1;
+    ctx.beginPath();
+    ctx.roundRect(x + pad, y + pad, CELL_SIZE - pad*2, CELL_SIZE - pad*2, isHead ? 6 : 3);
+    ctx.fill();
+
+    // 眼睛
+    if (isHead) {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff';
+      const eyeSize = 4;
+      const ex1 = x + CELL_SIZE/2 + direction.x * 5 - direction.y * 5;
+      const ey1 = y + CELL_SIZE/2 + direction.y * 5 - direction.x * 5;
+      const ex2 = x + CELL_SIZE/2 + direction.x * 5 + direction.y * 5;
+      const ey2 = y + CELL_SIZE/2 + direction.y * 5 + direction.x * 5;
+      ctx.beginPath();
+      ctx.arc(ex1, ey1, eyeSize, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(ex2, ey2, eyeSize, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#222';
+      ctx.beginPath();
+      ctx.arc(ex1 + direction.x * 1.5, ey1 + direction.y * 1.5, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(ex2 + direction.x * 1.5, ey2 + direction.y * 1.5, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+  });
+
+  // 粒子
+  drawParticles();
+
+  // Game Over 文字
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 200, 500, 80);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ff6b6b';
+    ctx.font = 'bold 36px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💀 GAME OVER', 250, 240);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '16px "Segoe UI", sans-serif';
+    ctx.fillText(`得分: ${score}  最高: ${highScore}`, 250, 275);
+  }
+
+  // 暂停
+  if (paused && !gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(200, 215, 100, 50);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('⏸ 暂停', 250, 240);
+  }
+}
+
+// roundRect polyfill for canvas
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (r > w / 2) r = w / 2;
+    if (r > h / 2) r = h / 2;
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r);
+    this.lineTo(x + w, y + h - r);
+    this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    this.lineTo(x + r, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r);
+    this.lineTo(x, y + r);
+    this.quadraticCurveTo(x, y, x + r, y);
+    this.closePath();
+    return this;
+  };
+}
+
+// ===== 方向控制 =====
+function setDirection(dx, dy) {
+  // 防止原地掉头
+  if (direction.x === -dx && direction.y === -dy) return;
+  // 防止同一 tick 内多次转向冲突
+  if (nextDirection.x === dx && nextDirection.y === dy) return;
+  nextDirection = { x: dx, y: dy };
+}
+
+// ===== 键盘 =====
+document.addEventListener('keydown', (e) => {
+  if (!started) return;
+  switch(e.key) {
+    case 'ArrowUp':    e.preventDefault(); setDirection(0, -1); break;
+    case 'ArrowDown':  e.preventDefault(); setDirection(0, 1); break;
+    case 'ArrowLeft':  e.preventDefault(); setDirection(-1, 0); break;
+    case 'ArrowRight': e.preventDefault(); setDirection(1, 0); break;
+    case ' ': e.preventDefault(); if (!gameOver) { paused = !paused; document.getElementById('pauseBtn').textContent = paused ? '▶ 继续' : '⏸ 暂停'; } break;
+  }
+});
+
+// ===== 点画布控制方向 =====
+canvas.addEventListener('click', (e) => {
+  if (gameOver) { startGame(); return; }
+  if (!started) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const tapX = (e.clientX - rect.left) * scaleX;
+  const tapY = (e.clientY - rect.top) * scaleY;
+  const head = snake[0];
+  const headCenterX = head.x * CELL_SIZE + CELL_SIZE/2;
+  const headCenterY = head.y * CELL_SIZE + CELL_SIZE/2;
+  const dx = tapX - headCenterX;
+  const dy = tapY - headCenterY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    setDirection(dx > 0 ? 1 : -1, 0);
+  } else {
+    setDirection(0, dy > 0 ? 1 : -1);
+  }
+});
+// 触屏也一样
+canvas.addEventListener('touchstart', (e) => {
+  if (gameOver) { startGame(); return; }
+  if (!started) return;
+  e.preventDefault();
+  const touch = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const tapX = (touch.clientX - rect.left) * scaleX;
+  const tapY = (touch.clientY - rect.top) * scaleY;
+  const head = snake[0];
+  const headCenterX = head.x * CELL_SIZE + CELL_SIZE/2;
+  const headCenterY = head.y * CELL_SIZE + CELL_SIZE/2;
+  const dx = tapX - headCenterX;
+  const dy = tapY - headCenterY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    setDirection(dx > 0 ? 1 : -1, 0);
+  } else {
+    setDirection(0, dy > 0 ? 1 : -1);
+  }
+});
+
+
+
+// ===== 按钮控制 =====
+
+
+function startGame() {
+  if (gameLoop) { clearInterval(gameLoop); gameLoop = null; }
+  initGame();
+  started = true;
+  gameOver = false;
+  paused = false;
+  document.getElementById('startBtn').textContent = '↻ 重新开始';
+  document.getElementById('pauseBtn').textContent = '⏸ 暂停';
+  draw();
+  gameLoop = setInterval(() => tick(), TICK_BASE);
+  // 动态调整 tick 速度
+  const origTick = tick;
+  const intervalId = setInterval(() => {
+    if (gameOver || !started) { clearInterval(intervalId); return; }
+    if (gameLoop) {
+      clearInterval(gameLoop);
+      gameLoop = setInterval(() => {
+        tick();
+        // 动态调整实际间隔
+      }, tickInterval);
+    }
+  }, 300);
+}
+
+// ===== 按钮事件 =====
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  if (!started || gameOver) return;
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? '▶ 继续' : '⏸ 暂停';
+});
+
+// ===== 初始渲染 =====
+initGame();
+draw();
+ctx.fillStyle = 'rgba(0,0,0,0.5)';
+ctx.fillRect(150, 215, 200, 50);
+ctx.fillStyle = '#fff';
+ctx.font = 'bold 24px "Segoe UI", sans-serif';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.fillText('▶ 按开始游戏', 250, 240);
+</script>
+</body>
+</html>

@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🥚 蛋仔派对 - 巅峰派对</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+body {
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', 'PingFang SC', sans-serif;
+  overflow: hidden;
+  touch-action: none;
+}
+.game-container {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  background: linear-gradient(180deg, #87CEEB 0%, #E0F7FA 60%, #8BC34A 60%, #66BB6A 100%);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+#gameCanvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: transparent;
+  touch-action: none;
+}
+.controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px 16px;
+  background: rgba(0,0,0,0.3);
+  backdrop-filter: blur(8px);
+  gap: 10px;
+}
+.move-btns {
+  display: flex;
+  gap: 12px;
+}
+.ctrl-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  font-size: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.1s;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.ctrl-btn:active { background: rgba(255,255,255,0.3); transform: scale(0.92); }
+.ctrl-btn.jump-btn {
+  width: 72px;
+  height: 72px;
+  font-size: 20px;
+  background: rgba(255,200,0,0.2);
+  border-color: rgba(255,200,0,0.5);
+  flex-shrink: 0;
+}
+.ctrl-btn.jump-btn:active { background: rgba(255,200,0,0.4); }
+
+/* 屏幕外提示 */
+.tip-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+}
+.tip-overlay.active { pointer-events: auto; }
+.tip-overlay .title-text {
+  font-size: 36px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 3px 10px rgba(0,0,0,0.5);
+  margin-bottom: 8px;
+}
+.tip-overlay .sub-text {
+  font-size: 16px;
+  color: rgba(255,255,255,0.85);
+  text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  margin-bottom: 20px;
+}
+.tip-overlay .big-btn {
+  pointer-events: auto;
+  padding: 14px 48px;
+  border-radius: 30px;
+  border: none;
+  background: linear-gradient(135deg, #FF6B6B, #FF4757);
+  color: #fff;
+  font-size: 22px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(255,71,87,0.4);
+  transition: transform 0.2s;
+}
+.tip-overlay .big-btn:active { transform: scale(0.95); }
+
+.hidden { display: none !important; }
+
+@media (max-height: 700px) {
+  .ctrl-btn { width: 50px; height: 50px; font-size: 22px; }
+  .ctrl-btn.jump-btn { width: 60px; height: 60px; }
+  .controls { padding: 6px 12px 12px; }
+}
+</style>
+</head>
+<body>
+
+<div class="game-container" id="gameContainer">
+  <canvas id="gameCanvas" width="500" height="400"></canvas>
+
+  <!-- 覆盖层：标题、结果等 -->
+  <div class="tip-overlay active" id="overlay">
+    <div class="title-text" id="overlayTitle">🥚 蛋仔派对</div>
+    <div class="sub-text" id="overlaySub">巅峰派对 🏆</div>
+    <button class="big-btn" id="overlayBtn">开始游戏</button>
+  </div>
+
+  <div class="controls" id="controls">
+    <div class="move-btns">
+      <button class="ctrl-btn" id="btnLeft">◀</button>
+      <button class="ctrl-btn" id="btnRight">▶</button>
+    </div>
+    <button class="ctrl-btn jump-btn" id="btnJump">⬆ 跳</button>
+  </div>
+</div>
+
+<script>
+// ============ 蛋仔派对 - 巅峰派对 ============
+// 2D 平台竞速游戏，3个赛道，4个AI对手
+
+// ---- 常量 ----
+const CANVAS_W = 500;
+const CANVAS_H = 400;
+const GRAVITY = 0.55;
+const JUMP_VEL = -9.5;
+const MOVE_SPEED = 3.8;
+const TILE = 40;
+const CHAR_W = 28;
+const CHAR_H = 36;
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlayTitle');
+const overlaySub = document.getElementById('overlaySub');
+const overlayBtn = document.getElementById('overlayBtn');
+
+// ---- 角色定义 ----
+const COLORS = {
+  blue:  { body: '#4A90D9', dark: '#357ABD', name: '小蓝' },
+  red:   { body: '#E74C3C', dark: '#C0392B', name: '小红' },
+  green: { body: '#2ECC71', dark: '#27AE60', name: '小绿' },
+  yellow:{ body: '#F1C40F', dark: '#D4AC0D', name: '小黄' },
+  purple:{ body: '#9B59B6', dark: '#8E44AD', name: '小紫' },
+};
+
+// ---- 游戏状态 ----
+let gameState = 'title'; // title | countdown | playing | results | finish
+let stage = 0;
+let players = [];
+let platforms = [];
+let finishX = 0;
+let stageName = '';
+let stageNames = ['🌈 彩虹赛道', '⚙️ 机关迷阵', '🏆 终极巅峰'];
+let countdownVal = 3;
+let countdownTimer = 0;
+let resultsTimer = 0;
+let cameraX = 0;
+let camTargetX = 0;
+let keys = { left: false, right: false, jump: false };
+let touchJump = false;
+let touchLeft = false;
+let touchRight = false;
+let animationId = null;
+let gameTime = 0;
+let finishOrder = [];
+let finishedPlayers = new Set();
+let totalStages = 3;
+let clouds = [];
+let bgParticles = [];
+
+// ---- 辅助工具 ----
+function rand(min, max) { return Math.random() * (max - min) + min; }
+
+// ---- 云朵背景 ----
+function initClouds() {
+  clouds = [];
+  for (let i = 0; i < 8; i++) {
+    clouds.push({
+      x: rand(0, 3000),
+      y: rand(20, 120),
+      w: rand(60, 120),
+      speed: rand(0.1, 0.3),
+      alpha: rand(0.3, 0.7),
+    });
+  }
+}
+initClouds();
+
+// ---- 粒子系统 ----
+function spawnParticles(x, y, color, count = 10) {
+  for (let i = 0; i < count; i++) {
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(1, 4);
+    bgParticles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 1,
+      life: 1,
+      decay: rand(0.015, 0.03),
+      size: rand(3, 6),
+      color,
+    });
+  }
+}
+
+// ---- 平台生成 ----
+function genStage(s) {
+  platforms = [];
+  finishX = 0;
+  let x = 0;
+  const groundY = CANVAS_H - 40;
+
+  // 固定长度
+  const levelLength = 2000 + s * 400;
+  const minPlatformW = 80;
+  const maxPlatformW = 160;
+
+  // 起始平台
+  platforms.push({ x: 0, y: groundY, w: 200, h: 40, type: 'start' });
+  x = 200;
+
+  while (x < levelLength) {
+    const gap = rand(40, 60 + s * 20);
+    x += gap;
+
+    // 平台宽度
+    let pw = rand(minPlatformW, maxPlatformW);
+    if (x + pw > levelLength) pw = levelLength - x + 40;
+
+    let type = 'normal';
+    let extra = {};
+
+    // 关卡特有机
+    if (s >= 1 && rand(0, 1) < 0.2) {
+      // 移动平台
+      type = 'moving';
+      extra = {
+        moveRange: rand(40, 80),
+        moveSpeed: rand(0.5, 1.2),
+        moveDir: Math.random() > 0.5 ? 'h' : 'v',
+        origX: x,
+        origY: groundY - rand(0, 60),
+        phase: rand(0, Math.PI * 2),
+      };
+    }
+
+    if (s >= 0 && rand(0, 1) < 0.15 && type === 'normal') {
+      // 尖刺
+      type = 'spike';
+    }
+
+    const py = groundY - (s > 0 ? rand(0, 40) : 0);
+    platforms.push({
+      x, y: type === 'moving' ? (extra.origY || py) : py,
+      w: pw, h: 40,
+      type, extra,
+      spikeOnTop: type === 'spike',
+    });
+
+    x += pw;
+  }
+
+  // 终点
+  finishX = x + 20;
+  platforms.push({ x: x, y: groundY, w: 60, h: 40, type: 'finish' });
+
+  // 装饰：随机小平台（高处的装饰）
+  for (let i = 0; i < 5 + s * 3; i++) {
+    const dx = rand(100, levelLength - 100);
+    platforms.push({
+      x: dx, y: groundY - rand(80, 160), w: rand(30, 60), h: 16,
+      type: 'deco', spikeOnTop: false
+    });
+  }
+}
+
+// ---- 玩家类 ----
+class Player {
+  constructor(id, color, isHuman = false) {
+    this.id = id;
+    this.color = color;
+    this.isHuman = isHuman;
+    this.x = 20;
+    this.y = CANVAS_H - 80;
+    this.vx = 0;
+    this.vy = 0;
+    this.onGround = false;
+    this.w = CHAR_W;
+    this.h = CHAR_H;
+    this.finished = false;
+    this.finishTime = 0;
+    this.finishPos = -1;
+    this.facingRight = true;
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.eyeBlink = 0;
+    this.blinkTimer = rand(60, 180);
+    this.stuckTimer = 0;
+    this.stuckThreshold = rand(30, 60);
+
+    // AI
+    this.aiSpeed = rand(2.2, 3.5);
+    this.aiJumpCooldown = 0;
+    this.aiErrorRate = 0.05 + rand(0, 0.15) + s * 0.03;
+    this.aiLookAhead = 80 + rand(0, 40);
+    this.aiAggression = rand(0.5, 1.0);
+  }
+
+  reset(x = 20, y = CANVAS_H - 80) {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.onGround = false;
+    this.finished = false;
+    this.finishTime = 0;
+    this.finishPos = -1;
+    this.stuckTimer = 0;
+  }
+
+  update() {
+    if (this.finished) return;
+
+    // 重力
+    this.vy += GRAVITY;
+
+    // 输入
+    let moveX = 0;
+    if (this.isHuman) {
+      if (keys.left || touchLeft) moveX = -1;
+      if (keys.right || touchRight) moveX = 1;
+      if (keys.jump || touchJump) {
+        if (this.onGround) {
+          this.vy = JUMP_VEL;
+          this.onGround = false;
+        }
+      }
+    } else {
+      // AI
+      this.aiUpdate();
+      if (this.vx > 0) moveX = 1;
+      if (this.vx < 0) moveX = -1;
+    }
+
+    // 水平移动
+    this.vx += moveX * 0.3;
+    if (moveX === 0) this.vx *= 0.8;
+    if (Math.abs(this.vx) > MOVE_SPEED) this.vx = Math.sign(this.vx) * MOVE_SPEED;
+    if (this.onGround && moveX === 0 && Math.abs(this.vx) < 0.1) this.vx = 0;
+
+    if (this.vx > 0) this.facingRight = true;
+    else if (this.vx < 0) this.facingRight = false;
+
+    // 移动
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // 碰撞
+    this.collide();
+
+    // 掉出世界
+    if (this.y > CANVAS_H + 100) {
+      this.respawn();
+    }
+
+    // 动画
+    if (Math.abs(this.vx) > 0.5) {
+      this.animTimer++;
+      if (this.animTimer > 6) {
+        this.animTimer = 0;
+        this.animFrame = (this.animFrame + 1) % 4;
+      }
+    } else {
+      this.animFrame = 0;
+      this.animTimer = 0;
+    }
+
+    // 眨眼
+    this.blinkTimer--;
+    if (this.blinkTimer <= 0) {
+      this.eyeBlink = 5;
+      this.blinkTimer = rand(60, 180);
+    }
+    if (this.eyeBlink > 0) this.eyeBlink--;
+
+    // AI 卡住检测
+    if (!this.isHuman) {
+      this.stuckTimer++;
+      if (this.stuckTimer > this.stuckThreshold) {
+        this.vy = JUMP_VEL;
+        this.onGround = false;
+        this.stuckTimer = 0;
+      }
+    }
+
+    // 触碰到尖刺
+    for (const p of platforms) {
+      if (p.spikeOnTop && this.isOnPlatform(p)) {
+        spawnParticles(this.x + this.w/2, this.y, '#ff0000', 8);
+        this.respawn();
+      }
+      // 触碰
+      if (p.type === 'spike') {
+        const overlapX = this.x + this.w > p.x && this.x < p.x + p.w;
+        const overlapY = this.y + this.h > p.y && this.y < p.y + p.h;
+        if (overlapX && overlapY) {
+          spawnParticles(this.x + this.w/2, this.y, '#ff0000', 8);
+          this.respawn();
+        }
+      }
+    }
+
+    // 到达终点
+    if (this.x + this.w/2 >= finishX) {
+      this.finished = true;
+      this.finishTime = gameTime;
+      if (!finishOrder.includes(this.id)) {
+        finishOrder.push(this.id);
+        this.finishPos = finishOrder.length;
+        spawnParticles(finishX, CANVAS_H - 60, '#FFD700', 20);
+      }
+    }
+  }
+
+  aiUpdate() {
+    if (this.aiJumpCooldown > 0) this.aiJumpCooldown--;
+
+    // 水平速度
+    this.vx = this.aiSpeed * this.aiAggression;
+
+    // 检查前方是否有平台
+    const lookX = this.x + this.aiLookAhead;
+    let hasGroundAhead = false;
+    let closestDist = 999;
+    let dangerAhead = false;
+
+    for (const p of platforms) {
+      if (p.type === 'deco' || p.type === 'finish') continue;
+      const px = p.x, pw = p.w, py = p.y;
+
+      // 地面在脚下前方
+      if (lookX >= px && lookX <= px + pw) {
+        const platformTop = py;
+        const feetY = this.y + this.h;
+        const heightDiff = platformTop - feetY;
+        if (heightDiff > -20 && heightDiff < 60) {
+          hasGroundAhead = true;
+          closestDist = px - this.x;
+        }
+      }
+
+      // 检测尖刺
+      if (p.spikeOnTop || p.type === 'spike') {
+        if (this.x + this.w > p.x && this.x < p.x + p.w + 20) {
+          dangerAhead = true;
+        }
+      }
+    }
+
+    // 卡在前方无地面或尖刺前方时跳跃
+    const dropAhead = !hasGroundAhead && closestDist < 60;
+    const nearEdge = !hasGroundAhead && closestDist < 100 && closestDist > -10;
+
+    if ((nearEdge || dropAhead) && this.onGround && this.aiJumpCooldown === 0) {
+      // AI 偶尔失误（没跳）
+      if (Math.random() > this.aiErrorRate) {
+        this.vy = JUMP_VEL;
+        this.onGround = false;
+        this.aiJumpCooldown = 15;
+      }
+    }
+
+    if (dangerAhead && this.onGround && Math.random() > this.aiErrorRate) {
+      this.vy = JUMP_VEL * 0.9;
+      this.onGround = false;
+      this.aiJumpCooldown = 10;
+    }
+
+    // 随机跳跃（增加变化）
+    if (this.onGround && Math.random() < 0.005) {
+      this.vy = JUMP_VEL * 0.8;
+      this.onGround = false;
+    }
+
+    // 如果玩家在前面且近，加速
+    const human = players.find(p => p.isHuman && !p.finished);
+    if (human && !this.finished) {
+      const dist = human.x - this.x;
+      if (dist > 0 && dist < 200) {
+        this.aiAggression = Math.min(1.2, this.aiAggression + 0.01);
+      }
+    }
+  }
+
+  isOnPlatform(p) {
+    const overlapX = this.x + this.w - 4 > p.x && this.x + 4 < p.x + p.w;
+    const bottomOnTop = Math.abs(this.y + this.h - p.y) < 8;
+    const falling = this.vy >= 0;
+    return overlapX && bottomOnTop && falling && this.y + this.h <= p.y + 5;
+  }
+
+  collide() {
+    this.onGround = false;
+
+    // 更新移动平台
+    for (const p of platforms) {
+      if (p.type === 'moving' && p.extra) {
+        const ex = p.extra;
+        if (ex.moveDir === 'h') {
+          p.x = ex.origX + Math.sin(gameTime * 0.02 * ex.moveSpeed + ex.phase) * ex.moveRange;
+        } else {
+          p.y = ex.origY + Math.sin(gameTime * 0.025 * ex.moveSpeed + ex.phase) * ex.moveRange;
+        }
+      }
+    }
+
+    for (const p of platforms) {
+      if (p.type === 'deco' || p.type === 'start' || p.type === 'finish') continue;
+
+      // 从上面落
+      if (this.isOnPlatform(p)) {
+        this.y = p.y - this.h;
+        this.vy = 0;
+        this.onGround = true;
+        this.stuckTimer = 0;
+      }
+
+      // 左右碰撞
+      const horizOverlap = this.x + this.w > p.x && this.x < p.x + p.w;
+      const vertOverlap = this.y + this.h > p.y + 4 && this.y < p.y + p.h - 4;
+      if (horizOverlap && vertOverlap && !this.isOnPlatform(p)) {
+        // 从下往上顶
+        if (this.vy < 0 && this.y > p.y + p.h / 2) {
+          this.y = p.y + p.h;
+          this.vy = 0;
+        } else {
+          // 侧碰
+          const centerX = this.x + this.w / 2;
+          if (centerX < p.x + p.w / 2) {
+            this.x = p.x - this.w;
+          } else {
+            this.x = p.x + p.w;
+          }
+          this.vx = 0;
+        }
+      }
+    }
+  }
+
+  respawn() {
+    // 找到最近的平台作为重生点
+    let bestP = platforms[0];
+    let bestDist = Infinity;
+    for (const p of platforms) {
+      if (p.type === 'deco' || p.spikeOnTop) continue;
+      const dist = Math.abs(p.x + p.w/2 - (this.x - 40));
+      if (dist < bestDist && p.y >= CANVAS_H - 80) {
+        bestDist = dist;
+        bestP = p;
+      }
+    }
+    this.x = bestP.x + bestP.w / 2 - this.w / 2;
+    this.y = bestP.y - this.h - 5;
+    this.vy = 0;
+    this.vx = 0;
+    this.stuckTimer = 0;
+  }
+
+  draw(ctx, camX) {
+    const sx = this.x - camX;
+    const sy = this.y;
+
+    // 影子
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath();
+    ctx.ellipse(sx + this.w/2, sy + this.h + 2, 12, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 身体（蛋形）
+    const cx = sx + this.w / 2;
+    const cy = sy + this.h / 2;
+    const rx = this.w / 2;
+    const ry = this.h / 2;
+
+    // 弹跳压扁拉伸
+    let scaleX = 1, scaleY = 1;
+    if (!this.onGround) {
+      scaleX = 0.85;
+      scaleY = 1.15;
+    }
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scaleX, scaleY);
+
+    // 身体渐变
+    const grad = ctx.createRadialGradient(-4, -6, 2, 0, 0, rx + 4);
+    grad.addColorStop(0, lightenColor(this.color.body, 40));
+    grad.addColorStop(0.7, this.color.body);
+    grad.addColorStop(1, this.color.dark);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 高光
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(-6, -8, 6, 8, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // 眼睛
+    const eyeY = sy + 14;
+    const eyeSpacing = 8;
+    const lookDir = this.facingRight ? 1 : -1;
+
+    // 眼白
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.ellipse(cx - eyeSpacing + lookDir * 1, eyeY, 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + eyeSpacing + lookDir * 1, eyeY, 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 瞳孔
+    ctx.fillStyle = '#2c3e50';
+    const blinkH = this.eyeBlink > 0 ? 1 : 5;
+    ctx.beginPath();
+    ctx.ellipse(cx - eyeSpacing + lookDir * 2.5, eyeY, 3, blinkH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + eyeSpacing + lookDir * 2.5, eyeY, 3, blinkH, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 嘴巴
+    if (this.eyeBlink <= 0) {
+      ctx.strokeStyle = '#2c3e50';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, sy + 22, 5, 0.1, Math.PI - 0.1);
+      ctx.stroke();
+    }
+
+    // 腮红（可爱的）
+    ctx.fillStyle = 'rgba(255,150,150,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(cx - 11, sy + 19, 4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 11, sy + 19, 4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function lightenColor(hex, amt) {
+  let r = parseInt(hex.slice(1,3), 16);
+  let g = parseInt(hex.slice(3,5), 16);
+  let b = parseInt(hex.slice(5,7), 16);
+  r = Math.min(255, r + amt);
+  g = Math.min(255, g + amt);
+  b = Math.min(255, b + amt);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ---- 初始化游戏 ----
+function initPlayers() {
+  players = [];
+  const colors = [COLORS.blue, COLORS.red, COLORS.green, COLORS.yellow, COLORS.purple];
+  const names = ['小蓝', '小红', '小绿', '小黄', '小紫'];
+  colors.forEach((c, i) => {
+    const p = new Player(i, c, i === 0);
+    players.push(p);
+  });
+}
+
+function resetPlayers() {
+  finishOrder = [];
+  finishedPlayers.clear();
+  players.forEach((p, i) => {
+    const startX = 20 + i * 18;
+    p.reset(startX, CANVAS_H - 80);
+  });
+}
+
+// ---- 绘制 ----
+function drawBackground(camX) {
+  // 天空
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  skyGrad.addColorStop(0, '#87CEEB');
+  skyGrad.addColorStop(0.5, '#B5E8F7');
+  skyGrad.addColorStop(0.7, '#E8F5E9');
+  skyGrad.addColorStop(1, '#C8E6C9');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // 远处山丘
+  ctx.fillStyle = 'rgba(76,175,80,0.15)';
+  for (let i = 0; i < 3; i++) {
+    const ox = (i * 400 - camX * 0.1) % 1200;
+    ctx.beginPath();
+    ctx.moveTo(ox - 100, CANVAS_H - 60);
+    ctx.quadraticCurveTo(ox + 50, CANVAS_H - 120 - i * 20, ox + 200, CANVAS_H - 60);
+    ctx.fill();
+  }
+
+  // 云
+  const gTime = Date.now() / 1000;
+  for (const c of clouds) {
+    const cx = ((c.x - camX * 0.2 + gTime * c.speed) % 800) - 100;
+    ctx.fillStyle = `rgba(255,255,255,${c.alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, c.y, c.w/2, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx - c.w*0.2, c.y - 5, c.w*0.3, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + c.w*0.2, c.y - 3, c.w*0.25, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawPlatforms(camX) {
+  for (const p of platforms) {
+    if (p.type === 'deco' || p.type === 'finish') continue;
+    const sx = p.x - camX;
+    const sy = p.y;
+    if (sx + p.w < -10 || sx > CANVAS_W + 10) continue;
+
+    // 平台阴影
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.fillRect(sx, sy + 4, p.w, p.h);
+
+    // 平台主体
+    const grad = ctx.createLinearGradient(sx, sy, sx, sy + p.h);
+    if (p.type === 'start') {
+      grad.addColorStop(0, '#81C784');
+      grad.addColorStop(1, '#66BB6A');
+    } else if (p.spikeOnTop) {
+      grad.addColorStop(0, '#FF8A65');
+      grad.addColorStop(1, '#E64A19');
+    } else if (p.type === 'moving') {
+      grad.addColorStop(0, '#B39DDB');
+      grad.addColorStop(1, '#7E57C2');
+    } else {
+      grad.addColorStop(0, '#8D6E63');
+      grad.addColorStop(1, '#6D4C41');
+    }
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.roundRect(sx, sy, p.w, p.h, 4);
+    ctx.fill();
+
+    // 草地顶
+    if (p.type !== 'spike') {
+      ctx.fillStyle = '#4CAF50';
+      ctx.fillRect(sx + 2, sy, p.w - 4, 5);
+      ctx.fillStyle = '#66BB6A';
+      ctx.fillRect(sx + 4, sy - 1, p.w - 8, 3);
+
+      // 小草装饰
+      for (let i = 0; i < p.w; i += 12) {
+        ctx.fillStyle = '#81C784';
+        const sway = Math.sin((p.x + i) * 0.1 + Date.now() * 0.002) * 2;
+        ctx.fillRect(sx + i + 4, sy - 6 + sway, 2, 6);
+      }
+    }
+
+    // 尖刺
+    if (p.spikeOnTop || p.type === 'spike') {
+      ctx.fillStyle = '#E53935';
+      for (let i = 0; i < p.w; i += 14) {
+        ctx.beginPath();
+        ctx.moveTo(sx + i, sy);
+        ctx.lineTo(sx + i + 7, sy - 16);
+        ctx.lineTo(sx + i + 14, sy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#FF5252';
+        ctx.beginPath();
+        ctx.moveTo(sx + i + 2, sy - 1);
+        ctx.lineTo(sx + i + 7, sy - 13);
+        ctx.lineTo(sx + i + 12, sy - 1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#E53935';
+      }
+    }
+  }
+
+  // 终点旗帜
+  const fx = finishX - camX;
+  ctx.fillStyle = '#FFD700';
+  ctx.fillRect(fx - 3, CANVAS_H - 90, 6, 50);
+  // 旗子
+  ctx.fillStyle = '#FF6B6B';
+  ctx.beginPath();
+  ctx.moveTo(fx + 3, CANVAS_H - 88);
+  ctx.lineTo(fx + 35, CANVAS_H - 75);
+  ctx.lineTo(fx + 3, CANVAS_H - 62);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🏁', fx + 18, CANVAS_H - 75);
+
+  // 起点线
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0 - camX, CANVAS_H - 80);
+  ctx.lineTo(0 - camX, CANVAS_H - 20);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawHUD() {
+  // 赛道名
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.roundRect(6, 6, 140, 26, 8);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${stageNames[stage]} (${stage+1}/${totalStages})`, 14, 20);
+
+  // 排名
+  const sorted = [...players].sort((a, b) => {
+    if (a.finished && !b.finished) return -1;
+    if (!a.finished && b.finished) return 1;
+    if (a.finished && b.finished) return a.finishTime - b.finishTime;
+    return b.x - a.x;
+  });
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.roundRect(CANVAS_W - 76, 6, 70, 26, 8);
+  ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center';
+  const myRank = sorted.findIndex(p => p.isHuman) + 1;
+  ctx.fillText(`#${myRank} / ${players.length}`, CANVAS_W - 41, 20);
+
+  // 进度条
+  const progress = Math.min(1, players[0].x / finishX);
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.roundRect(60, CANVAS_H - 14, CANVAS_W - 120, 8, 4);
+  ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.roundRect(60, CANVAS_H - 14, (CANVAS_W - 120) * progress, 8, 4);
+  ctx.fill();
+}
+
+function drawCountdown() {
+  const alpha = Math.min(1, countdownTimer / 30);
+  const scale = 1 + (1 - alpha) * 0.3;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(CANVAS_W/2, CANVAS_H/2 - 20);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.roundRect(-50, -25, 100, 50, 16);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 40px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const text = countdownVal > 0 ? countdownVal : 'GO!';
+  ctx.fillText(text, 0, 2);
+  ctx.restore();
+}
+
+function drawResults() {
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`🏆 ${stageNames[stage]} 排名`, CANVAS_W/2, 30);
+
+  const sorted = [...players].sort((a, b) => {
+    if (a.finished && !b.finished) return -1;
+    if (!a.finished && b.finished) return 1;
+    if (a.finished && b.finished) return a.finishTime - b.finishTime;
+    return b.x - a.x;
+  });
+
+  const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+  sorted.forEach((p, i) => {
+    const y = 75 + i * 48;
+    const isMe = p.isHuman;
+
+    ctx.fillStyle = isMe ? 'rgba(255,215,0,0.2)' : 'rgba(255,255,255,0.05)';
+    ctx.beginPath();
+    ctx.roundRect(CANVAS_W/2 - 150, y - 16, 300, 40, 10);
+    ctx.fill();
+
+    ctx.font = '24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(medals[i] || `${i+1}`, CANVAS_W/2 - 100, y + 4);
+
+    // 蛋色
+    ctx.beginPath();
+    ctx.ellipse(CANVAS_W/2 - 50, y + 4, 10, 13, 0, 0, Math.PI * 2);
+    ctx.fillStyle = p.color.body;
+    ctx.fill();
+
+    ctx.fillStyle = isMe ? '#FFD700' : '#fff';
+    ctx.font = isMe ? 'bold 18px sans-serif' : '16px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(p.color.name + (isMe ? ' (你)' : ''), CANVAS_W/2 - 32, y + 4);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'right';
+    if (p.finished) {
+      ctx.fillText(`${(p.finishTime / 60).toFixed(1)}s`, CANVAS_W/2 + 130, y + 4);
+    } else {
+      ctx.fillText('未完成', CANVAS_W/2 + 130, y + 4);
+    }
+  });
+
+  // 按钮
+  const btnY = CANVAS_H - 60;
+  ctx.fillStyle = '#6C5CE7';
+  ctx.beginPath();
+  ctx.roundRect(CANVAS_W/2 - 80, btnY - 18, 160, 42, 21);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  if (stage < totalStages - 1) {
+    ctx.fillText('下一关 ▶', CANVAS_W/2, btnY + 4);
+  } else {
+    ctx.fillText('重新开始 🔄', CANVAS_W/2, btnY + 4);
+  }
+
+  // 点击检测
+  if (gameState === 'results') {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    canvas.onclick = function(e) {
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top) * scaleY;
+      if (mx >= CANVAS_W/2 - 80 && mx <= CANVAS_W/2 + 80 &&
+          my >= btnY - 18 && my <= btnY + 24) {
+        canvas.onclick = null;
+        if (stage < totalStages - 1) {
+          nextStage();
+        } else {
+          restartGame();
+        }
+      }
+    };
+  }
+}
+
+// ---- 游戏流程 ----
+function startGame() {
+  stage = 0;
+  overlay.classList.remove('active');
+  overlay.classList.add('hidden');
+  initPlayers();
+  genStage(stage);
+  resetPlayers();
+  gameState = 'countdown';
+  countdownVal = 3;
+  countdownTimer = 0;
+  gameTime = 0;
+  bgParticles = [];
+  runLoop();
+}
+
+function nextStage() {
+  stage++;
+  genStage(stage);
+  resetPlayers();
+  gameState = 'countdown';
+  countdownVal = 3;
+  countdownTimer = 0;
+  bgParticles = [];
+  gameTime = 0;
+  canvas.onclick = null;
+}
+
+function restartGame() {
+  stage = 0;
+  initPlayers();
+  genStage(0);
+  resetPlayers();
+  gameState = 'countdown';
+  countdownVal = 3;
+  countdownTimer = 0;
+  bgParticles = [];
+  gameTime = 0;
+  canvas.onclick = null;
+}
+
+function runLoop() {
+  if (animationId) cancelAnimationFrame(animationId);
+  let lastTime = 0;
+
+  function loop(time) {
+    const dt = lastTime ? Math.min(time - lastTime, 33) : 16;
+    lastTime = time;
+
+    update(dt);
+    draw();
+    animationId = requestAnimationFrame(loop);
+  }
+  animationId = requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  // 粒子
+  bgParticles = bgParticles.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.05;
+    p.life -= p.decay;
+    return p.life > 0;
+  });
+
+  // 更新
+  if (gameState === 'countdown') {
+    countdownTimer++;
+    if (countdownTimer > 60) {
+      countdownTimer = 0;
+      countdownVal--;
+      if (countdownVal < 0) {
+        gameState = 'playing';
+        gameTime = 0;
+      }
+    }
+    if (gameState === 'countdown') return;
+  }
+
+  if (gameState === 'playing') {
+    gameTime += dt;
+    const human = players[0];
+
+    // 更新所有玩家
+    players.forEach(p => p.update());
+
+    // 相机
+    camTargetX = human.x - CANVAS_W * 0.35;
+    camTargetX = Math.max(0, Math.min(camTargetX, finishX - CANVAS_W + 60));
+    cameraX += (camTargetX - cameraX) * 0.1;
+
+    // 检查是否所有人都完成或超时
+    const allFinished = players.every(p => p.finished);
+    const timeLimit = 30 * 1000 / dt;
+    if (allFinished || gameTime > timeLimit) {
+      gameState = 'results';
+      resultsTimer = 0;
+    }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+  drawBackground(cameraX);
+  drawPlatforms(cameraX);
+
+  // 画角色
+  // 按 y 排序（远近）
+  const sortedP = [...players].sort((a, b) => a.y - b.y);
+  sortedP.forEach(p => p.draw(ctx, cameraX));
+
+  // 粒子
+  for (const p of bgParticles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x - cameraX, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  if (gameState === 'countdown') {
+    drawCountdown();
+  }
+
+  if (gameState === 'playing') {
+    drawHUD();
+  }
+
+  if (gameState === 'results') {
+    drawResults();
+  }
+}
+
+// ---- 控制 ----
+// 键盘
+document.addEventListener('keydown', (e) => {
+  switch(e.key) {
+    case 'ArrowLeft': case 'a': case 'A': keys.left = true; e.preventDefault(); break;
+    case 'ArrowRight': case 'd': case 'D': keys.right = true; e.preventDefault(); break;
+    case 'ArrowUp': case 'w': case 'W': case ' ': keys.jump = true; e.preventDefault(); break;
+  }
+});
+document.addEventListener('keyup', (e) => {
+  switch(e.key) {
+    case 'ArrowLeft': case 'a': case 'A': keys.left = false; e.preventDefault(); break;
+    case 'ArrowRight': case 'd': case 'D': keys.right = false; e.preventDefault(); break;
+    case 'ArrowUp': case 'w': case 'W': case ' ': keys.jump = false; e.preventDefault(); break;
+  }
+});
+
+// 触屏按钮
+const btnLeft = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+const btnJump = document.getElementById('btnJump');
+
+function addTouch(el, key) {
+  el.addEventListener('touchstart', (e) => { e.preventDefault(); if (key === 'jump') touchJump = true; else if (key === 'left') touchLeft = true; else if (key === 'right') touchRight = true; });
+  el.addEventListener('touchend', (e) => { e.preventDefault(); if (key === 'jump') touchJump = false; else if (key === 'left') touchLeft = false; else if (key === 'right') touchRight = false; });
+  el.addEventListener('touchcancel', (e) => { if (key === 'jump') touchJump = false; else if (key === 'left') touchLeft = false; else if (key === 'right') touchRight = false; });
+  // Mouse fallback
+  el.addEventListener('mousedown', () => { if (key === 'jump') touchJump = true; else if (key === 'left') touchLeft = true; else if (key === 'right') touchRight = true; });
+  el.addEventListener('mouseup', () => { if (key === 'jump') touchJump = false; else if (key === 'left') touchLeft = false; else if (key === 'right') touchRight = false; });
+  el.addEventListener('mouseleave', () => { if (key === 'jump') touchJump = false; else if (key === 'left') touchLeft = false; else if (key === 'right') touchRight = false; });
+}
+addTouch(btnLeft, 'left');
+addTouch(btnRight, 'right');
+addTouch(btnJump, 'jump');
+
+// 开始按钮
+overlayBtn.addEventListener('click', startGame);
+overlayBtn.addEventListener('touchend', (e) => { e.preventDefault(); startGame(); });
+
+// ---- roundRect polyfill ----
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, radii) {
+    const r = typeof radii === 'number' ? radii : (radii || 0);
+    if (w < 2 * r) r = w / 2;
+    if (h < 2 * r) r = h / 2;
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
+// ---- 初始渲染 ----
+// 绘制一个空背景
+ctx.fillStyle = '#87CEEB';
+ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+ctx.fillStyle = '#fff';
+ctx.font = '18px sans-serif';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.fillText('🥚 点击"开始游戏"进入巅峰派对', CANVAS_W/2, CANVAS_H/2);
+</script>
+</body>
+</html>
