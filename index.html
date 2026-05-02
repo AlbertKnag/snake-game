@@ -95,33 +95,11 @@
     50% { transform: scale(1.05); opacity: 0.85; }
   }
 
-  .mobile-dpad {
-    margin-top: 16px;
-  }
-  .dpad-row { display: flex; justify-content: center; gap: 6px; margin: 4px 0; }
-  .dpad-btn {
-    width: 60px; height: 60px;
-    background: rgba(255,255,255,0.12);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 14px;
-    color: #fff;
-    font-size: 26px;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: all 0.15s;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .dpad-btn:active { background: rgba(255,255,255,0.25); transform: scale(0.93); }
-
   @media (max-width: 560px) {
     .game-wrapper { padding: 12px; border-radius: 16px; }
     canvas { width: 100%; height: auto; aspect-ratio: 1/1; }
     .score-box { font-size: 15px; padding: 6px 14px; gap: 14px; }
     .title { font-size: 18px; }
-  }
-  @media (max-width: 560px) {
-    .mobile-dpad .dpad-btn { width: 52px; height: 52px; font-size: 22px; }
   }
 </style>
 </head>
@@ -146,14 +124,7 @@
     <button id="resetBtn">↻ 重置</button>
   </div>
 
-  <div class="mobile-dpad">
-    <div class="dpad-row"><div class="dpad-btn" data-dir="up">▲</div></div>
-    <div class="dpad-row">
-      <div class="dpad-btn" data-dir="left">◀</div>
-      <div class="dpad-btn" data-dir="down">▼</div>
-      <div class="dpad-btn" data-dir="right">▶</div>
-    </div>
-  </div>
+
 </div>
 
 <script>
@@ -689,19 +660,45 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ===== 手机方向按钮 =====
-document.querySelectorAll('[data-dir]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (!started) return;
-    switch(btn.dataset.dir) {
-      case 'up':    setDirection(0, -1); break;
-      case 'down':  setDirection(0, 1); break;
-      case 'left':  setDirection(-1, 0); break;
-      case 'right': setDirection(1, 0); break;
-    }
-  });
-  // 防止触摸滚动
-  btn.addEventListener('touchstart', (e) => e.preventDefault());
+// ===== 点画布控制方向 =====
+canvas.addEventListener('click', (e) => {
+  if (!started || gameOver) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const tapX = (e.clientX - rect.left) * scaleX;
+  const tapY = (e.clientY - rect.top) * scaleY;
+  const head = snake[0];
+  const headCenterX = head.x * CELL_SIZE + CELL_SIZE/2;
+  const headCenterY = head.y * CELL_SIZE + CELL_SIZE/2;
+  const dx = tapX - headCenterX;
+  const dy = tapY - headCenterY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    setDirection(dx > 0 ? 1 : -1, 0);
+  } else {
+    setDirection(0, dy > 0 ? 1 : -1);
+  }
+});
+// 触屏也一样
+canvas.addEventListener('touchstart', (e) => {
+  if (!started || gameOver) return;
+  e.preventDefault();
+  const touch = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const tapX = (touch.clientX - rect.left) * scaleX;
+  const tapY = (touch.clientY - rect.top) * scaleY;
+  const head = snake[0];
+  const headCenterX = head.x * CELL_SIZE + CELL_SIZE/2;
+  const headCenterY = head.y * CELL_SIZE + CELL_SIZE/2;
+  const dx = tapX - headCenterX;
+  const dy = tapY - headCenterY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    setDirection(dx > 0 ? 1 : -1, 0);
+  } else {
+    setDirection(0, dy > 0 ? 1 : -1);
+  }
 });
 
 
