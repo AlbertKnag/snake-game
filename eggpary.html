@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <title>蛋仔派对 - 巅峰派对</title>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script>if(typeof THREE==='undefined'){document.write('<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/scr'+'ipt>');}</script>
+<script src="https://unpkg.zhimg.com/three@0.128.0/build/three.min.js"></script>
+<script>if(typeof THREE==='undefined'){document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/scr'+'ipt>');}</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-touch-callout:none;-webkit-user-select:none;touch-action:manipulation}
 html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e;font-family:'PingFang SC','Microsoft YaHei',sans-serif}
@@ -59,6 +59,7 @@ canvas{display:block;width:100%!important;height:100%!important}
 </head>
 <body>
 <div id="loading"><div class="title">🥚 蛋仔派对</div><div class="sub">巅峰派对 · 加载中...</div><div class="bar"><div class="bar-fill" id="load-bar"></div></div></div>
+<div id="start-screen"><div class="title">🥚 蛋仔派对</div><div class="sub">巅峰派对</div><div class="start-btn" id="start-btn">⚡ 点击开始 ⚡</div><div class="hint">触碰画面操控·掉落即淘汰</div></div>
 <div id="game-container"></div>
 <div id="hud">
   <div id="hud-top">
@@ -674,7 +675,7 @@ function initGame(){
   for(let i=0;i<2;i++)spawnItem();
 
   updateHUD();
-  startCountdown();
+  // start triggered by button
 }
 
 function startCountdown(){
@@ -1055,7 +1056,9 @@ let lastTime=0;
 let animId=null;
 
 function tick(time){
-  animId=requestAnimationFrame(tick);
+     animId=requestAnimationFrame(tick);
+document.getElementById('start-btn').addEventListener('click',function(){  document.getElementById('start-screen').classList.remove('show');  startCountdown();});
+document.addEventListener('keydown',function(e){if(e.key==='Enter'&&document.getElementById('start-screen').classList.contains('show')){document.getElementById('start-screen').classList.remove('show');startCountdown();}});
   if(!lastTime)lastTime=time;
   const dt=Math.min((time-lastTime)/1000,.05);
   lastTime=time;
@@ -1176,25 +1179,14 @@ window.addEventListener('resize',()=>{
 });
 
 // ===== Loading =====
-const loadBar=document.getElementById('load-bar');
+// THREE is synchronous, update loading bar then show start
 loadBar.style.width='100%';
-var threeCheck=setInterval(function(){
-  if(typeof THREE!=='undefined'){
-    clearInterval(threeCheck);
-    setTimeout(function(){
-      document.getElementById('loading').style.display='none';
-      initGame();
-      animId=requestAnimationFrame(tick);
-    },400);
-  }
-},50);
 setTimeout(function(){
-  clearInterval(threeCheck);
-  if(typeof THREE==='undefined'){
-    document.querySelector('#loading .sub').textContent='加载失败，请刷新重试';
-    loadBar.style.background='#ff4444';
-  }
-},15000);
+  document.getElementById('loading').style.display='none';
+  initGame();
+  document.getElementById('start-screen').classList.add('show');
+  animId=requestAnimationFrame(tick);
+},500);
 </script>
 </body>
 </html>
