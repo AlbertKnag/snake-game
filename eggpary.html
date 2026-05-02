@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <title>蛋仔派对 - 巅峰派对</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>if(typeof THREE==='undefined'){document.write('<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/scr'+'ipt>');}</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-touch-callout:none;-webkit-user-select:none;touch-action:manipulation}
 html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e;font-family:'PingFang SC','Microsoft YaHei',sans-serif}
@@ -90,7 +91,7 @@ const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x1a1a2e);
 scene.fog=new THREE.Fog(0x1a1a2e,20,50);
 const camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,.1,100);
-camera.position.set(0,14,12);
+camera.position.set(0,5,6);
 camera.lookAt(0,0,0);
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth,window.innerHeight);
@@ -192,7 +193,7 @@ arenaGroup.add(base);
 
 // Rim ring
 const rimGeo=new THREE.TorusGeometry(ARENA_RADIUS,.12,8,48);
-const rimMat2=new THREE.MeshStandardMaterial({color:0xffd700,roughness:.4,metalness:.7,emissive:0xffd700,emissiveIntensity:.05});
+const rimMat2=new THREE.MeshStandardMaterial({color:0xffd700,roughness:.4,metalness:.7,emissive:0xffd700,emissiveIntensity:.3});
 const rimRing=new THREE.Mesh(rimGeo,rimMat2);
 rimRing.rotation.x=Math.PI/2;
 rimRing.position.y=.04;
@@ -219,6 +220,13 @@ cen.position.y=.04;
 arenaGroup.add(cen);
 
 scene.add(arenaGroup);
+var glowRing=new THREE.Mesh(
+  new THREE.RingGeometry(ARENA_RADIUS-.3,ARENA_RADIUS+.5,48),
+  new THREE.MeshBasicMaterial({color:0x4488ff,transparent:true,opacity:.08,side:THREE.DoubleSide})
+);
+glowRing.rotation.x=-Math.PI/2;
+glowRing.position.y=-.01;
+scene.add(glowRing);
 
 // ===== Items =====
 class GameItem{
@@ -367,7 +375,7 @@ class EggPlayer{
     const eggMat=new THREE.MeshStandardMaterial({
       color:color,roughness:.3,metalness:.4,
     });
-    this.body=new THREE.Mesh(new THREE.SphereGeometry(.5,16,16),eggMat);
+    this.body=new THREE.Mesh(new THREE.SphereGeometry(.55,16,16),eggMat);
     this.body.scale.set(1,1.35,1);
     this.body.position.y=.5;
     this.body.castShadow=true;
@@ -635,7 +643,9 @@ function getSpawnPos(idx,total){
   return {x:Math.cos(a)*(ARENA_RADIUS-1),z:Math.sin(a)*(ARENA_RADIUS-1)};
 }
 
+var threeReady=false;
 function initGame(){
+  if(!threeReady&&typeof THREE!=='undefined')threeReady=true;
   // Remove existing players
   players.forEach(p=>{scene.remove(p.group);});
   players=[];
@@ -1126,11 +1136,13 @@ function tick(time){
   tickParts();
   rebuildPartMesh();
 
-  // Camera position
+  // Camera - 3rd person dynamic follow
   if(players[0]&&players[0].alive){
-    const px=players[0].x*-.3;
-    camera.position.x=px;
-    camera.lookAt(0,0,0);
+    var cx=players[0].x*-0.5;
+    var cz=players[0].z*-0.3+5.5;
+    camera.position.x+=(cx-camera.position.x)*0.08;
+    camera.position.z+=(cz-camera.position.z)*0.08;
+    camera.lookAt(players[0].x*0.3,0,players[0].z*0.3);
   }
 
   // HUD items
@@ -1166,11 +1178,23 @@ window.addEventListener('resize',()=>{
 // ===== Loading =====
 const loadBar=document.getElementById('load-bar');
 loadBar.style.width='100%';
-setTimeout(()=>{
-  document.getElementById('loading').style.display='none';
-  initGame();
-  animId=requestAnimationFrame(tick);
-},600);
+var threeCheck=setInterval(function(){
+  if(typeof THREE!=='undefined'){
+    clearInterval(threeCheck);
+    setTimeout(function(){
+      document.getElementById('loading').style.display='none';
+      initGame();
+      animId=requestAnimationFrame(tick);
+    },400);
+  }
+},50);
+setTimeout(function(){
+  clearInterval(threeCheck);
+  if(typeof THREE==='undefined'){
+    document.querySelector('#loading .sub').textContent='加载失败，请刷新重试';
+    loadBar.style.background='#ff4444';
+  }
+},15000);
 </script>
 </body>
 </html>
