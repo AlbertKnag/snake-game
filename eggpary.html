@@ -369,56 +369,129 @@ class EggPlayer{
     this.stunTimer=0;
     this.knockbackVx=0;
     this.knockbackVz=0;
+    this._bob=0;
 
     this.group=new THREE.Group();
 
-    // Egg body
+    // Egg body - pear shaped (slightly wider top)
     const eggMat=new THREE.MeshStandardMaterial({
-      color:color,roughness:.3,metalness:.4,
+      color:color,roughness:.4,metalness:.2,
     });
-    this.body=new THREE.Mesh(new THREE.SphereGeometry(.55,16,16),eggMat);
-    this.body.scale.set(1,1.35,1);
-    this.body.position.y=.5;
+    this.body=new THREE.Mesh(new THREE.SphereGeometry(.5,20,20),eggMat);
+    this.body.scale.set(1.05,1.35,1.0);
+    this.body.position.y=.47;
     this.body.castShadow=true;
     this.group.add(this.body);
 
-    // Specular highlight strip
-    const stripMat=new THREE.MeshStandardMaterial({
-      color:color,roughness:.1,metalness:.6,emissive:color,emissiveIntensity:.05
+    // Belly - lighter circle on front
+    const bellyMat=new THREE.MeshStandardMaterial({
+      color:0xffffff,roughness:.7,metalness:0,
+      transparent:true,opacity:.25
     });
-    const strip=new THREE.Mesh(new THREE.TorusGeometry(.4,.06,8,16),stripMat);
-    strip.position.y=.5;
-    strip.rotation.x=Math.PI/2.5;
-    this.group.add(strip);
+    const belly=new THREE.Mesh(new THREE.CircleGeometry(.25,12),bellyMat);
+    belly.position.set(0,.45,.51);
+    this.group.add(belly);
 
-    // Eyes
-    const eyeMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.3});
-    const pupilMat=new THREE.MeshStandardMaterial({color:0x222222,roughness:.5});
+    // ===== BIG ANIME EYES =====
     for(let side of[-1,1]){
-      const eye=new THREE.Mesh(new THREE.SphereGeometry(.12,10,10),eyeMat);
-      eye.position.set(side*.18,.62,.45);
-      this.group.add(eye);
-      const pupil=new THREE.Mesh(new THREE.SphereGeometry(.06,8,8),pupilMat);
-      pupil.position.set(side*.18,.62,.48);
+      // White sclera (bigger)
+      const sclera=new THREE.Mesh(
+        new THREE.SphereGeometry(.16,12,12),
+        new THREE.MeshStandardMaterial({color:0xffffff,roughness:.3})
+      );
+      sclera.position.set(side*.2,.55,.47);
+      this.group.add(sclera);
+
+      // Colored iris (slightly darker)
+      const irisMat=new THREE.MeshStandardMaterial({
+        color:color,roughness:.5,metalness:0
+      });
+      const iris=new THREE.Mesh(new THREE.SphereGeometry(.10,10,10),irisMat);
+      iris.position.set(side*.2,.55,.51);
+      iris.scale.set(1,.9,.5);
+      this.group.add(iris);
+
+      // Black pupil
+      const pupil=new THREE.Mesh(
+        new THREE.SphereGeometry(.055,8,8),
+        new THREE.MeshStandardMaterial({color:0x111111,roughness:.8})
+      );
+      pupil.position.set(side*.2,.55,.53);
       this.group.add(pupil);
+
+      // White shine/highlight
+      const shine=new THREE.Mesh(
+        new THREE.SphereGeometry(.03,6,6),
+        new THREE.MeshBasicMaterial({color:0xffffff})
+      );
+      shine.position.set(side*.2+.04,.58,.53);
+      this.group.add(shine);
     }
 
-    // Mouth (cheerful smile)
-    const mouthGeo=new THREE.TorusGeometry(.07,.02,6,12,Math.PI);
-    const mouthMat=new THREE.MeshStandardMaterial({color:0x333333});
-    const mouth=new THREE.Mesh(mouthGeo,mouthMat);
-    mouth.position.set(0,.55,.52);
-    mouth.rotation.x=-.2;
-    this.group.add(mouth);
+    // ===== CUTE SMILE =====
+    const smileMat=new THREE.MeshStandardMaterial({color:0xcc4444});
+    // Main smile arc
+    const smileArc=new THREE.Mesh(
+      new THREE.TorusGeometry(.08,.025,6,12,Math.PI),
+      smileMat
+    );
+    smileArc.position.set(0,.48,.515);
+    smileArc.rotation.x=-.3;
+    smileArc.rotation.z=.05;
+    this.group.add(smileArc);
 
-    // Blush
+    // ===== BLUSH CHEEKS =====
     for(let side of[-1,1]){
       const blush=new THREE.Mesh(
-        new THREE.CircleGeometry(.07,8),
-        new THREE.MeshBasicMaterial({color:this.color,transparent:true,opacity:.25})
+        new THREE.CircleGeometry(.09,8),
+        new THREE.MeshBasicMaterial({color:0xff8a8a,transparent:true,opacity:.3})
       );
-      blush.position.set(side*.3,.45,.42);
+      blush.position.set(side*.34,.44,.43);
       this.group.add(blush);
+    }
+
+    // ===== TINY ARMS =====
+    const armMat=new THREE.MeshStandardMaterial({color:color,roughness:.4,metalness:.2});
+    // Each arm: small sphere + cylinder
+    for(let side of[-1,1]){
+      const armGroup=new THREE.Group();
+      armGroup.name='arm_'+side;
+
+      const armBall=new THREE.Mesh(
+        new THREE.SphereGeometry(.09,8,8),armMat
+      );
+      armBall.position.set(0,0,0);
+      armGroup.add(armBall);
+
+      const hand=new THREE.Mesh(
+        new THREE.SphereGeometry(.07,6,6),
+        new THREE.MeshStandardMaterial({color:0xffddcc,roughness:.8})
+      );
+      hand.position.set(0,-.1,0);
+      armGroup.add(hand);
+
+      armGroup.position.set(side*.56,.5,.3);
+      armGroup.rotation.z=side*.35;
+      armGroup.rotation.x=.5;
+      this.group.add(armGroup);
+    }
+
+    // ===== TINY LEGS =====
+    const footMat=new THREE.MeshStandardMaterial({color:0xffddcc,roughness:.8,metalness:0});
+    for(let side of[-1,1]){
+      const legGroup=new THREE.Group();
+      legGroup.name='leg_'+side;
+
+      // Foot stub
+      const foot=new THREE.Mesh(
+        new THREE.SphereGeometry(.08,8,8),footMat
+      );
+      foot.scale.set(1.2,.5,1.4);
+      foot.position.set(0,0,0);
+      legGroup.add(foot);
+
+      legGroup.position.set(side*.15,.1,.15);
+      this.group.add(legGroup);
     }
 
     // Shadow
@@ -587,8 +660,37 @@ class EggPlayer{
     this.body.rotation.x=this.rollAngle;
     this.body.rotation.y=0;
     this.body.rotation.z=0;
-    this.body.position.set(0,.5,0);
+    this.body.position.set(0,.47,0);
     this.group.rotation.y=-this.rotation;
+
+    // Animate arms - swing when moving
+    this._bob+=dt*(1+moveSpeed*2);
+    for(let side of[-1,1]){
+      const arm=this.group.getObjectByName('arm_'+side);
+      if(arm){
+        if(moveSpeed>.5){
+          arm.rotation.x=.5+Math.sin(this._bob*3+side)*.3;
+        }else{
+          arm.rotation.x=.5+Math.sin(this._bob*.5+side)*.05;
+        }
+      }
+    }
+    // Animate legs - wobble
+    for(let side of[-1,1]){
+      const leg=this.group.getObjectByName('leg_'+side);
+      if(leg){
+        leg.rotation.x=Math.sin(this._bob*2+side)*.1;
+      }
+    }
+
+    // Bounce idle animation
+    const idleBob=Math.sin(this._bob*1.5)*.01;
+    this.body.position.y=.47+idleBob;
+    // Move arms slightly for idle bounce
+    for(let side of[-1,1]){
+      const arm=this.group.getObjectByName('arm_'+side);
+      if(arm)arm.position.y=idleBob*.5;
+    }
 
     // Boundary check
     const dist=Math.sqrt(this.x*this.x+this.z*this.z);
